@@ -1,0 +1,96 @@
+name: Build Intel macOS DMG (Unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Branch or tag to build"
+        required: true
+        default: "master"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-intel-macos
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Verify Intel runner
+        run: |
+          echo "Architecture: $(uname -m)"
+          test "$(uname -m)" = "x86_64"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: "11.28.5"
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check packaging environment
+        run: |
+          pnpm run package:desktop:mac:x64:unsigned --check
+
+      - name: Build Intel unsigned DMG
+        run: |
+          pnpm run package:desktop:mac:x64:unsigned
+
+      - name: Locate DMG
+        id: dmg
+        run: |
+          DMG_DIR="apps/desktop/.desktop-build/targets/mac-x64/unsigned-artifacts"
+
+          DMG=$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' | head -n 1)
+
+          if [ -z "$DMG" ]; then
+            echo "ERROR: DMG not found"
+            echo "Contents of output directory:"
+            ls -la "$DMG_DIR" || true
+            exit 1
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+
+          echo "DMG=$DMG" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Found: $DMG"
+          echo "Version: $VERSION"
+
+      - name: Upload Intel DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-mac-x64-unsigned-${{ steps.dmg.outputs.VERSION }}
+          path: ${{ steps.dmg.outputs.DMG }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload packaging logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-macos-build-logs-${{ github.run_id }}
+          path: apps/desktop/.desktop-build/packaging-runs/
+          if-no-files-found: ignore
+          retention-days: 7
