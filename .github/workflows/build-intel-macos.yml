@@ -10,7 +10,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-intel-macos
@@ -95,3 +95,30 @@ jobs:
           path: apps/desktop/.desktop-build/packaging-runs/
           if-no-files-found: ignore
           retention-days: 7
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.dmg.outputs.VERSION }}-intel-${{ github.run_number }}
+          name: DeepSeek Harness ${{ steps.dmg.outputs.VERSION }} Intel Mac Build #${{ github.run_number }}
+          body: |
+            ## DeepSeek Harness Intel macOS Build
+
+            - Version: ${{ steps.dmg.outputs.VERSION }}
+            - Architecture: Intel x86_64
+            - Build: #${{ github.run_number }}
+            - Source ref: ${{ inputs.source_ref }}
+            - Commit: ${{ github.sha }}
+
+            ### Important
+
+            This is an unsigned build.
+            No Apple Developer ID signing or notarization is included.
+
+            Please remove macOS quarantine if Gatekeeper blocks the application.
+          files: ${{ steps.dmg.outputs.DMG }}
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    
